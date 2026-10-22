@@ -8,22 +8,31 @@
 
 - **True Desktop Integration:** Hooks into the Windows desktop architecture (`Progman` / `WorkerW`) to render videos beneath `SHELLDLL_DefView` (desktop icons).
 - **Windows 11 24H2 Ready:** Native support for the new internal `WorkerW` child container structure introduced in modern Windows 11 updates.
+- **Auto-Installation & Program Setup:** On launch, the executable automatically sets itself up inside `C:\InterLive\InterLive.exe` as a permanent application.
+- **Automatic Shortcut Creation:** Instantly creates:
+  - **Desktop Shortcut:** `Desktop\InterLive Live Wallpaper.lnk`
+  - **Start Menu Shortcut:** `Start Menu\Programs\InterLive Live Wallpaper.lnk`
+- **Auto-Start on Laptop Restart / Boot:** Automatically starts on Windows reboot via:
+  - Windows Registry: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+  - Windows Startup Folder: `AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\InterLive.lnk`
+  - Runs silently in the background on startup without annoying popups, immediately displaying your live video wallpaper.
 - **High-DPI Aware:** Queries physical display metrics via hardware GDI (`GetDeviceCaps`), ensuring edge-to-edge full-screen playback on 100%, 125%, 150%, and 200% display scaling.
-- **Modern Control GUI:** Dark-themed management window to select MP4 files, preview active wallpapers, and save configurations.
-- **System Tray Integration:** Runs silently in the background with a system tray icon for quick access to the control dialog, wallpaper switcher, and application exit.
+- **Modern Control GUI:** Dark-themed management window to select MP4 files, preview active wallpapers, toggle autostart, and manage shortcuts.
+- **System Tray Integration:** Runs silently in the background with a system tray icon for quick access to the control dialog, wallpaper switcher, autostart toggle, and application exit.
 - **Zero Console Window:** Runs completely hidden without black command-prompt terminal windows popping up.
 
 ---
 
-## File Architecture
+## Application Directory Structure
 
-All active wallpaper assets and persistent settings are stored in the standardized application directory:
+All active wallpaper assets, persistent settings, and the installed program binary reside in:
 
 ```text
 C:\InterLive\
-├── wallpaper.mp4   # The currently active wallpaper video
-├── config.json     # Configuration file storing video paths
-└── engine.log      # Diagnostic logging (HWNDs, player states, resolutions)
+├── InterLive.exe    # The installed program binary
+├── wallpaper.mp4    # The active desktop video wallpaper
+├── config.json      # Configuration settings (video path, autostart state)
+└── engine.log       # Diagnostic operational log
 ```
 
 ---
@@ -32,7 +41,7 @@ C:\InterLive\
 
 1. **Operating System:** Windows 10 or Windows 11 (64-bit).
 2. **Python:** Python 3.10 or newer (64-bit).
-   - During Python installation, ensure you check the box: **"Add Python to PATH"**.
+   - During Python installation, ensure you check: **"Add Python to PATH"**.
 
 ---
 
@@ -52,9 +61,9 @@ pip install pyinstaller
 ```
 
 ### Library Details:
-- **`PyQt6`**: Powers the GUI window (`QWidget`), video decoding and playback (`QMediaPlayer`, `QVideoWidget`), audio control (`QAudioOutput`), and system tray management (`QSystemTrayIcon`).
+- **`PyQt6`**: Powers the GUI window (`QWidget`), hardware-accelerated video decoding and playback (`QMediaPlayer`, `QVideoWidget`), audio control (`QAudioOutput`), and system tray management (`QSystemTrayIcon`).
 - **`pyinstaller`**: Packages the Python script, Qt dynamic link libraries (`.dll`), and dependencies into a single, self-contained `.exe` binary.
-- **`ctypes` & `wintypes`**: Built into Python standard library; used for low-level Windows User32/GDI32 Win32 API interop.
+- **`ctypes`, `wintypes`, `winreg`**: Built into Python standard library; handles low-level Win32 User32/GDI32 desktop hooks, native COM shortcut creation (`IShellLinkW`), and Windows Registry autostart keys.
 
 ---
 
@@ -63,7 +72,7 @@ pip install pyinstaller
 To test or run the application directly using Python:
 
 ```powershell
-# Navigate to the project folder
+# Navigate to project folder
 cd D:\ABC
 
 # Run the script
@@ -74,75 +83,48 @@ python live_wallpaper.py
 
 ## Step 3: Compiling into a Standalone `.exe`
 
-You can compile the script into a single executable that runs independently without requiring Python to be installed on other systems.
-
-### Recommended Build Command (Standard User Mode)
+To package the script into a single standalone `.exe` that runs on any Windows machine:
 
 ```powershell
-python -m PyInstaller --clean --onefile --noconsole --name "InterLive_App" "D:\ABC\live_wallpaper.py"
+python -m PyInstaller --clean --onefile --noconsole --name "InterLive" "D:\ABC\live_wallpaper.py"
 ```
 
-> **Why this is recommended:** Running as a standard user process (`asInvoker`) allows the application to cleanly parent into Windows Explorer (`explorer.exe`, which runs at Medium Integrity). This avoids Windows User Interface Privilege Isolation (UIPI) restrictions and eliminates annoying UAC administrator prompts on startup.
-
----
-
-### Alternative Build Command (Administrator Mode)
-
-If you specifically require the `.exe` to request Windows Administrator privileges on launch:
-
-```powershell
-python -m PyInstaller --clean --onefile --noconsole --uac-admin --name "InterLive_Admin" "D:\ABC\live_wallpaper.py"
+The resulting binary will be generated at:
+```text
+D:\ABC\dist\InterLive.exe
 ```
-
----
 
 ### PyInstaller Flags Breakdown
 
 | Flag | Purpose |
 | :--- | :--- |
 | `--clean` | Cleans PyInstaller build cache and removes temporary files before building. |
-| `--onefile` | Bundles all Python code, Qt libraries, and C-extensions into a single `.exe`. |
-| `--noconsole` | Hides the black terminal/command prompt window so the app runs silently in the background. |
-| `--name <name>` | Sets the output binary name (e.g., `InterLive_App.exe`). |
-| `--uac-admin` | Adds an administrative elevation manifest (`requireAdministrator`) to the executable. |
-
-The compiled output will be generated inside the `dist\` folder:
-```text
-D:\ABC\dist\InterLive_App.exe
-```
+| `--onefile` | Bundles all Python runtime code, Qt libraries, and C-extensions into a single standalone `.exe`. |
+| `--noconsole` | Completely suppresses the black terminal window so the application runs silently in the background. |
+| `--name "InterLive"` | Sets the output binary name to `InterLive.exe`. |
 
 ---
 
-## How to Use the Application
+## How It Works
 
-1. **Launch:** Double-click `InterLive_App.exe`.
-2. **Setup:**
-   - If a video is already configured at `C:\InterLive\wallpaper.mp4`, playback begins automatically on the desktop, and the Control Window appears.
-   - If launching for the first time, click **"Select Video"** to choose any standard `.mp4` file.
-   - Click **"Set as Wallpaper"**. The video will be copied to `C:\InterLive\wallpaper.mp4` and injected behind your desktop icons immediately.
-3. **Hide:** Click **"Hide to Tray"** or close the window. The video continues playing on your desktop.
-4. **Control via System Tray:**
-   - Click or double-click the blue tray icon in the Windows taskbar corner to reopen the Control Window.
-   - Right-click the tray icon to access:
-     - **Open Control Window**
-     - **Change Wallpaper Video**
-     - **Exit Wallpaper** (stops video and cleanly terminates the process)
+### 1. First Run & Program Setup
+When you run `InterLive.exe`:
+- It ensures `C:\InterLive` is created.
+- Copies itself to `C:\InterLive\InterLive.exe` as the installed program.
+- Generates high-res shortcuts on your **Desktop** and in your **Start Menu Programs**.
+- Registers `InterLive` in Windows Startup (`HKCU\...\Run` and Startup folder) so your live wallpaper automatically starts whenever your laptop boots or restarts.
 
----
+### 2. Startup on Reboot
+When you restart your laptop:
+- Windows automatically launches `InterLive.exe --autostart`.
+- The engine waits for Windows Explorer and `Progman` to finish initializing.
+- The wallpaper starts playing automatically on your desktop, and the app stays minimized in the system tray without popping up any setup dialog.
 
-## Troubleshooting
-
-### 1. Wallpaper is not covering the full screen
-- The engine uses GDI `GetDeviceCaps` to pull native screen dimensions (`1920 x 1080`). If your display scaling changes, reopening the app or restarting it from the tray menu will recalibrate the resolution to match your current display settings.
-
-### 2. "PermissionError: [WinError 5] Access is denied" during PyInstaller build
-- An instance of the `.exe` is currently running in the background. Stop all active instances before recompiling:
-  ```powershell
-  taskkill /F /IM InterLive*
-  ```
-
-### 3. Desktop icons disappearing or occluded
-- The engine automatically issues `InvalidateRect` and `UpdateWindow` to `SHELLDLL_DefView` whenever a wallpaper starts. If icons ever need a manual refresh, click any blank space on your desktop and press **F5**.
-
-### 4. Supported Video Formats
-- Standard **H.264 video with AAC audio (in `.mp4` container)** is natively supported and hardware-accelerated by the Windows Media Foundation backend. High resolutions (1080p, 2K, 4K) run at minimal CPU usage (~1-3%).
+### 3. Control Window & System Tray
+- Double-click the **InterLive Live Wallpaper** shortcut on your Desktop or click the system tray icon to open the Manager window.
+- From the Manager window, you can:
+  - Click **"Select Video"** to change the MP4 wallpaper at any time.
+  - Toggle **"Auto-start on laptop restart / boot"**.
+  - Click **"Create Shortcut"** if you ever need to restore your desktop shortcut.
+  - Click **"Hide to Tray"** to dismiss the window while keeping the live wallpaper playing.
+  - Right-click the system tray icon for quick access to settings or to **Exit Wallpaper**.
